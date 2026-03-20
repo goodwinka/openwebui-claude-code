@@ -61,6 +61,9 @@ def detect_workspace_command(prompt: str) -> tuple[str, str | None] | None:
     if switch_match:
         return ("switch", switch_match.group(1))
 
+    if lower in ("help", "/help", "помощь", "команды"):
+        return ("help", None)
+
     return None
 
 

@@ -35,6 +35,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
 
+WELCOME_MESSAGE = """\
+Добро пожаловать в **Claude Code**!
+
+Я AI-ассистент для работы с кодом. Умею читать, редактировать и создавать файлы, \
+выполнять команды и работать с git прямо в вашем воркспейсе.
+
+## Команды воркспейса
+
+| Команда | Описание |
+|---------|----------|
+| `clone <url>` | Клонировать git-репозиторий |
+| `workspace list` | Показать список ваших воркспейсов |
+| `workspace switch <имя>` | Переключить активный воркспейс |
+| `help` | Показать эту справку |
+
+## Начало работы
+
+- Клонируйте репозиторий: `clone https://github.com/user/repo`
+- Или просто опишите задачу — я работаю в вашем рабочем каталоге.
+
+Чем могу помочь?"""
+
 # ─── Helpers ──────────────────────────────────────────────────────
 
 _SAFE_NAME_RE = re.compile(r"[^\w\-.]")
@@ -109,13 +131,19 @@ async def chat_completions(
     """
     user_id = _extract_user_id(request, body)
 
-    # Команды управления воркспейсом прямо из чата
+    # Команды управления воркспейсом / help / приветствие новой сессии
     if body.messages:
         last_msg = body.messages[-1]
         if last_msg.role == "user":
             ws_cmd = detect_workspace_command(last_msg.content)
             if ws_cmd:
+                if ws_cmd[0] == "help":
+                    return _help_response()
                 return await _handle_workspace_command(user_id, ws_cmd)
+
+            # Первое сообщение новой сессии — показываем приветствие
+            if _is_new_session(body.messages):
+                return _help_response()
 
     workspace_dir = await workspace_manager.ensure_workspace(user_id)
 
@@ -142,6 +170,23 @@ async def chat_completions(
             messages=body.messages,
             workspace_dir=workspace_dir,
         )
+
+
+def _is_new_session(messages: list[ChatMessage]) -> bool:
+    """Возвращает True, если в истории нет ни одного ответа ассистента."""
+    return not any(m.role == "assistant" for m in messages)
+
+
+def _help_response() -> ChatCompletionResponse:
+    """Возвращает приветственное/справочное сообщение."""
+    return ChatCompletionResponse(
+        model="claude-code",
+        choices=[
+            ChatCompletionChoice(
+                message=ChatMessage(role="assistant", content=WELCOME_MESSAGE)
+            )
+        ],
+    )
 
 
 async def _handle_workspace_command(
