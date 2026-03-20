@@ -2,13 +2,21 @@
 
 /v1/models         — список доступных моделей
 /v1/chat/completions — основной эндпоинт (streaming и non-streaming)
+
+Идентификация пользователя (в порядке приоритета):
+  1. HTTP-заголовок X-OpenWebUI-User-Name  (ENABLE_FORWARD_USER_INFO_HEADERS=true)
+  2. HTTP-заголовок X-OpenWebUI-User-Id    (UUID, fallback)
+  3. body → metadata → user_id             (если Pipe Function пробрасывает)
+  4. body → user                           (стандартное поле OpenAI)
+  5. "default"
 """
 
 from __future__ import annotations
 
 import logging
+import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from app.auth import verify_api_key
@@ -27,6 +35,54 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
 
+# ─── Helpers ──────────────────────────────────────────────────────
+
+_SAFE_NAME_RE = re.compile(r"[^\w\-.]")
+
+
+def _sanitize_user_id(raw: str) -> str:
+    """Приводит любой идентификатор к безопасному имени директории."""
+    name = _SAFE_NAME_RE.sub("_", raw)
+    return name.strip("_.")[:64] or "default"
+
+
+def _extract_user_id(request: Request, body: ChatCompletionRequest) -> str:
+    """Извлекает user_id из всех возможных источников.
+
+    Open WebUI по умолчанию НЕ передаёт user в payload при проксировании
+    к внешним OpenAI-совместимым бэкендам. Metadata (user_id, chat_id)
+    удаляется из payload перед отправкой.
+
+    Способы получить user_id:
+      1. ENABLE_FORWARD_USER_INFO_HEADERS=true в Open WebUI →
+         заголовки X-OpenWebUI-User-Name / X-OpenWebUI-User-Id
+      2. Кастомная Pipe Function, пробрасывающая metadata.user_id
+      3. Поле body.user (стандарт OpenAI, не заполняется Open WebUI)
+    """
+    # 1. Заголовки от Open WebUI (ENABLE_FORWARD_USER_INFO_HEADERS)
+    header_name = request.headers.get("x-openwebui-user-name")
+    if header_name:
+        return _sanitize_user_id(header_name)
+
+    header_id = request.headers.get("x-openwebui-user-id")
+    if header_id:
+        return _sanitize_user_id(header_id)
+
+    # 2. metadata.user_id (если Pipe Function или будущие версии OWU)
+    if body.metadata and isinstance(body.metadata, dict):
+        meta_user = body.metadata.get("user_id")
+        if meta_user:
+            return _sanitize_user_id(str(meta_user))
+
+    # 3. Стандартное поле OpenAI
+    if body.user:
+        return _sanitize_user_id(body.user)
+
+    return "default"
+
+
+# ─── Routes ───────────────────────────────────────────────────────
+
 
 @router.get("/models")
 async def list_models(
@@ -43,19 +99,19 @@ async def list_models(
 
 @router.post("/chat/completions")
 async def chat_completions(
-    request: ChatCompletionRequest,
+    request: Request,
+    body: ChatCompletionRequest,
     _: str = Depends(verify_api_key),
 ):
     """Основной эндпоинт.
 
-    Open WebUI передаёт `user` в теле запроса — определяет воркспейс.
+    Определяет пользователя из заголовков / metadata / body.user.
     """
-    user_id = request.user or "default"
-    user_id = user_id.replace("@", "_").replace(" ", "_")
+    user_id = _extract_user_id(request, body)
 
     # Команды управления воркспейсом прямо из чата
-    if request.messages:
-        last_msg = request.messages[-1]
+    if body.messages:
+        last_msg = body.messages[-1]
         if last_msg.role == "user":
             ws_cmd = detect_workspace_command(last_msg.content)
             if ws_cmd:
@@ -65,13 +121,13 @@ async def chat_completions(
 
     logger.info(
         "Chat request from user=%s, workspace=%s, stream=%s",
-        user_id, workspace_dir, request.stream,
+        user_id, workspace_dir, body.stream,
     )
 
-    if request.stream:
+    if body.stream:
         return StreamingResponse(
             stream_claude_response(
-                messages=request.messages,
+                messages=body.messages,
                 workspace_dir=workspace_dir,
             ),
             media_type="text/event-stream",
@@ -83,7 +139,7 @@ async def chat_completions(
         )
     else:
         return await run_claude_sync(
-            messages=request.messages,
+            messages=body.messages,
             workspace_dir=workspace_dir,
         )
 

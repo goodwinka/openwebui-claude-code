@@ -72,6 +72,33 @@ curl -H "Authorization: Bearer YOUR_KEY" http://localhost:8000/v1/models
 3. **API Key**: значение `API_SECRET_KEY` из `.env`
 4. В списке моделей появится `claude-code`
 
+### Идентификация пользователей (важно!)
+
+Open WebUI **по умолчанию не передаёт** имя пользователя внешним бэкендам.
+Без настройки все пользователи попадут в один воркспейс `default/`.
+
+**Рекомендуемый способ** — включите переменную окружения в Open WebUI:
+
+```
+ENABLE_FORWARD_USER_INFO_HEADERS=true
+```
+
+Это заставит Open WebUI отправлять HTTP-заголовки:
+- `X-OpenWebUI-User-Name` — имя пользователя (например `alice`)
+- `X-OpenWebUI-User-Id` — UUID пользователя
+- `X-OpenWebUI-User-Email` — email
+- `X-OpenWebUI-User-Role` — роль (`admin` / `user`)
+
+Наш прокси извлечёт из них `user_id` для маршрутизации воркспейсов.
+
+**Приоритет определения пользователя:**
+
+1. Заголовок `X-OpenWebUI-User-Name` (самый надёжный)
+2. Заголовок `X-OpenWebUI-User-Id` (UUID, fallback)
+3. Поле `metadata.user_id` в теле запроса (если используется Pipe Function)
+4. Поле `user` в теле запроса (стандарт OpenAI)
+5. `"default"` — если ничего не найдено
+
 ## Управление воркспейсами
 
 ### Из чата (Open WebUI)

@@ -20,7 +20,8 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = True
     temperature: float | None = None
     max_tokens: int | None = None
-    user: str | None = None  # Open WebUI передаёт user_id здесь
+    user: str | None = None       # Стандартное поле OpenAI (не заполняется OWU)
+    metadata: dict | None = None  # Open WebUI: user_id, chat_id (если пробрасывается)
 
 
 class ChatCompletionChoice(BaseModel):
