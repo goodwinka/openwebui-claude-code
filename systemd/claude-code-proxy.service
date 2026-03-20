@@ -1,0 +1,29 @@
+[Unit]
+Description=Claude Code Proxy (Open WebUI Bridge)
+After=network.target
+
+[Service]
+Type=simple
+User=claude-code
+Group=claude-code
+WorkingDirectory=/opt/openwebui-claude-code
+EnvironmentFile=/opt/openwebui-claude-code/.env
+ExecStart=/opt/openwebui-claude-code/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-code-proxy
+
+LimitNOFILE=65536
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Безопасность — сервис НЕ требует root
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/srv/workspaces /tmp
+
+[Install]
+WantedBy=multi-user.target
