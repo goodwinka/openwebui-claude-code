@@ -55,8 +55,11 @@ WELCOME_MESSAGE = """\
 | Команда | Описание |
 |---------|----------|
 | `push` | Запушить текущую ветку в origin |
-| `create pr <заголовок>` | Создать GitHub Pull Request |
+| `create pr <заголовок>` | Создать Pull Request (GitHub) или Merge Request (GitLab) |
 | `git status` | Показать текущую ветку |
+
+> **GitLab** (в т.ч. локальная сеть): требуется `GITLAB_TOKEN` в `.env`
+> **GitHub**: работает через `gh` CLI или `GITHUB_TOKEN` в `.env`
 
 ## Начало работы
 
