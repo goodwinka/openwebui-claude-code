@@ -163,7 +163,8 @@ class WorkspaceManager:
                 raise ValueError(f"Workspace '{ws_name}' already exists")
 
             # git clone
-            cmd = ["git", "clone", "--depth=1"]
+            depth = settings.git_clone_depth
+            cmd = ["git", "clone"] + ([f"--depth={depth}"] if depth > 0 else [])
             if branch:
                 cmd += ["--branch", branch]
             cmd += [repo_url, str(ws_path)]
@@ -307,7 +308,7 @@ class WorkspaceManager:
         Called once immediately after a successful clone.
         Returns the new branch name.
         """
-        branch_name = "claude/session-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        branch_name = settings.git_branch_prefix + datetime.now().strftime("%Y%m%d-%H%M%S")
 
         await self._run_git(
             ["config", "--local", "user.name", settings.git_user_name], ws_path
@@ -421,7 +422,7 @@ class WorkspaceManager:
             "Accept": "application/vnd.github+json",
         }
         # Определяем base branch через API
-        async with httpx.AsyncClient(proxy=proxy, timeout=30) as client:
+        async with httpx.AsyncClient(proxy=proxy, timeout=settings.git_api_timeout) as client:
             repo_resp = await client.get(
                 f"https://api.github.com/repos/{project_path}",
                 headers=headers,
@@ -450,7 +451,7 @@ class WorkspaceManager:
         proxy = settings.effective_https_proxy or None
 
         async with httpx.AsyncClient(
-            proxy=proxy, timeout=30, verify=False  # noqa: S501 — self-signed certs in LAN
+            proxy=proxy, timeout=settings.git_api_timeout, verify=settings.gitlab_ssl_verify
         ) as client:
             # Получаем default branch проекта
             proj_resp = await client.get(
@@ -475,7 +476,7 @@ class WorkspaceManager:
                     "source_branch": branch,
                     "target_branch": default_branch,
                     "title": title,
-                    "remove_source_branch": False,
+                    "remove_source_branch": settings.gitlab_mr_remove_source_branch,
                 },
             )
             if mr_resp.status_code == 409:

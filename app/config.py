@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     https_proxy: str = ""           # HTTPS-прокси (если пусто — используется http_proxy)
     git_user_name: str = "Claude Code"              # имя автора git-коммитов
     git_user_email: str = "claude-code@localhost"   # email автора git-коммитов
+    git_clone_depth: int = 1                        # 0 = полный clone
+    git_branch_prefix: str = "claude/session-"     # префикс создаваемых веток
+    git_api_timeout: int = 30                       # таймаут запросов к GitHub/GitLab API (сек)
+    gitlab_ssl_verify: bool = False                 # True — проверять SSL (для публичных инстансов)
+    gitlab_mr_remove_source_branch: bool = False    # удалять ветку после merge MR
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
