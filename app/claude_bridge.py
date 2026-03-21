@@ -64,6 +64,19 @@ def detect_workspace_command(prompt: str) -> tuple[str, str | None] | None:
     if lower in ("help", "/help", "помощь", "команды"):
         return ("help", None)
 
+    if re.match(r"^(git\s+)?push$", lower):
+        return ("git_push", None)
+
+    pr_match = re.match(
+        r"^(?:create\s+pr|pull\s+request)\s*(.*)$", prompt.strip(), re.IGNORECASE
+    )
+    if pr_match:
+        title = pr_match.group(1).strip() or "Claude Code changes"
+        return ("create_pr", title)
+
+    if re.match(r"^(git\s+)?status$", lower):
+        return ("git_status", None)
+
     return None
 
 

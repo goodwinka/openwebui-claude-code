@@ -73,6 +73,7 @@ class WorkspaceInfo(BaseModel):
     path: str
     is_active: bool = False
     git_remote: str | None = None
+    git_branch: str | None = None
     created_at: float | None = None
 
 

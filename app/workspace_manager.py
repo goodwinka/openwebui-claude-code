@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -139,6 +140,9 @@ class WorkspaceManager:
                     shutil.rmtree(ws_path)
                 raise RuntimeError(f"git clone failed: {stderr.decode()}")
 
+            branch_name = await self._init_claude_branch(ws_path)
+            logger.info("Created branch %s in %s", branch_name, ws_path)
+
             self._set_active_workspace(user_id, ws_name)
 
             return WorkspaceInfo(
@@ -146,6 +150,7 @@ class WorkspaceManager:
                 path=str(ws_path),
                 is_active=True,
                 git_remote=repo_url,
+                git_branch=branch_name,
                 created_at=time.time(),
             )
 
@@ -219,6 +224,99 @@ class WorkspaceManager:
         path = self._active_ws_path(user_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(name)
+
+    # ─── Git helpers ──────────────────────────────────────────────
+
+    async def _run_git(
+        self, args: list[str], cwd: Path
+    ) -> tuple[int, str, str]:
+        """Runs a git subcommand in cwd. Returns (returncode, stdout, stderr)."""
+        proc = await asyncio.create_subprocess_exec(
+            "git", *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd),
+        )
+        stdout, stderr = await proc.communicate()
+        return (
+            proc.returncode,
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
+        )
+
+    async def _init_claude_branch(self, ws_path: Path) -> str:
+        """Sets local git identity and creates a claude/session-* branch.
+
+        Called once immediately after a successful clone.
+        Returns the new branch name.
+        """
+        branch_name = "claude/session-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        await self._run_git(
+            ["config", "--local", "user.name", "Claude Code"], ws_path
+        )
+        await self._run_git(
+            ["config", "--local", "user.email", "claude-code@localhost"], ws_path
+        )
+
+        rc, _, stderr = await self._run_git(
+            ["checkout", "-b", branch_name], ws_path
+        )
+        if rc != 0:
+            raise RuntimeError(f"Failed to create branch: {stderr.strip()}")
+
+        return branch_name
+
+    async def get_current_branch(self, ws_path: Path) -> str | None:
+        """Returns the current git branch name, or None if not in a git repo."""
+        rc, stdout, _ = await self._run_git(
+            ["branch", "--show-current"], ws_path
+        )
+        if rc != 0:
+            return None
+        return stdout.strip() or None
+
+    async def git_push(self, ws_path: Path) -> str:
+        """Pushes the current branch to origin. Returns the branch name."""
+        branch = await self.get_current_branch(ws_path)
+        if not branch:
+            raise RuntimeError("Not on any branch (detached HEAD or not a git repo)")
+
+        rc, _, stderr = await self._run_git(
+            ["push", "-u", "origin", branch], ws_path
+        )
+        if rc != 0:
+            raise RuntimeError(f"git push failed: {stderr.strip()}")
+        return branch
+
+    async def create_pr(self, ws_path: Path, title: str) -> str:
+        """Creates a GitHub PR using the gh CLI. Returns the PR URL."""
+        if not shutil.which("gh"):
+            raise RuntimeError(
+                "GitHub CLI (`gh`) is not installed. "
+                "Install it from https://cli.github.com and authenticate with `gh auth login`."
+            )
+
+        branch = await self.get_current_branch(ws_path)
+        if not branch:
+            raise RuntimeError("Not on any branch — cannot create a PR.")
+
+        proc = await asyncio.create_subprocess_exec(
+            "gh", "pr", "create",
+            "--title", title,
+            "--body", "",
+            "--head", branch,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(ws_path),
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"gh pr create failed: {stderr.decode(errors='replace').strip()}"
+            )
+        return stdout.decode(errors="replace").strip()
 
 
 # Singleton
