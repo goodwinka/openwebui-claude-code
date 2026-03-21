@@ -310,10 +310,10 @@ class WorkspaceManager:
         branch_name = "claude/session-" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
         await self._run_git(
-            ["config", "--local", "user.name", "Claude Code"], ws_path
+            ["config", "--local", "user.name", settings.git_user_name], ws_path
         )
         await self._run_git(
-            ["config", "--local", "user.email", "claude-code@localhost"], ws_path
+            ["config", "--local", "user.email", settings.git_user_email], ws_path
         )
 
         rc, _, stderr = await self._run_git(

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     github_token: str = ""          # GitHub token (fallback если gh CLI недоступен)
     http_proxy: str = ""            # HTTP-прокси, например http://proxy.local:3128
     https_proxy: str = ""           # HTTPS-прокси (если пусто — используется http_proxy)
+    git_user_name: str = "Claude Code"              # имя автора git-коммитов
+    git_user_email: str = "claude-code@localhost"   # email автора git-коммитов
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
