@@ -93,3 +93,24 @@ class WorkspaceListResponse(BaseModel):
     user_id: str
     workspaces: list[WorkspaceInfo]
     active: str | None = None
+
+
+# ─── File listing ─────────────────────────────────────────────────
+
+
+class FileEntry(BaseModel):
+    path: str           # Относительный путь от корня воркспейса
+    name: str           # Имя файла/папки
+    is_dir: bool
+    size: int | None = None   # None для директорий
+    modified_at: float | None = None
+
+
+class FileListResponse(BaseModel):
+    workspace: str
+    root: str           # Относительный префикс (обычно "")
+    files: list[FileEntry]
+
+
+class DownloadZipRequest(BaseModel):
+    paths: list[str]   # Список относительных путей для скачивания
