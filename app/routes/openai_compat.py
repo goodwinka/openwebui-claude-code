@@ -50,9 +50,22 @@ WELCOME_MESSAGE = """\
 | `workspace switch <имя>` | Переключить активный воркспейс |
 | `help` | Показать эту справку |
 
+## Git-команды
+
+| Команда | Описание |
+|---------|----------|
+| `push` | Запушить текущую ветку в origin |
+| `create pr <заголовок>` | Создать Pull Request (GitHub) или Merge Request (GitLab) |
+| `git status` | Показать текущую ветку |
+
+> **GitLab** (в т.ч. локальная сеть): требуется `GITLAB_TOKEN` в `.env`
+> **GitHub**: работает через `gh` CLI или `GITHUB_TOKEN` в `.env`
+
 ## Начало работы
 
 - Клонируйте репозиторий: `clone https://github.com/user/repo`
+- После клонирования автоматически создаётся ветка `claude/session-*`
+- Когда готово: `push` → `create pr Мои изменения`
 - Или просто опишите задачу — я работаю в вашем рабочем каталоге.
 
 Чем могу помочь?"""
@@ -199,11 +212,14 @@ async def _handle_workspace_command(
     try:
         if command == "clone" and arg:
             info = await workspace_manager.clone_repo(user_id=user_id, repo_url=arg)
+            branch_note = f"\n**Ветка:** `{info.git_branch}`" if info.git_branch else ""
             text = (
                 f"Репозиторий склонирован!\n\n"
                 f"**Имя:** {info.name}\n"
-                f"**Путь:** {info.path}\n\n"
-                f"Воркспейс активирован. Все команды Claude Code теперь работают здесь."
+                f"**Путь:** {info.path}"
+                f"{branch_note}\n\n"
+                f"Воркспейс активирован. Все команды Claude Code теперь работают здесь.\n"
+                f"Когда будете готовы: `push` — запушить ветку, `create pr <заголовок>` — создать PR."
             )
 
         elif command == "list":
@@ -221,6 +237,24 @@ async def _handle_workspace_command(
         elif command == "switch" and arg:
             await workspace_manager.switch_workspace(user_id, arg)
             text = f"Активный воркспейс переключён на **{arg}**"
+
+        elif command == "git_push":
+            workspace_dir = await workspace_manager.ensure_workspace(user_id)
+            branch = await workspace_manager.git_push(workspace_dir)
+            text = (
+                f"Ветка **{branch}** запушена в origin.\n\n"
+                f"Введите `create pr <заголовок>` чтобы открыть pull request."
+            )
+
+        elif command == "create_pr" and arg:
+            workspace_dir = await workspace_manager.ensure_workspace(user_id)
+            pr_url = await workspace_manager.create_pr(workspace_dir, arg)
+            text = f"Pull request создан!\n\n{pr_url}"
+
+        elif command == "git_status":
+            workspace_dir = await workspace_manager.ensure_workspace(user_id)
+            branch = await workspace_manager.get_current_branch(workspace_dir)
+            text = f"Текущая ветка: **{branch or 'неизвестно'}**"
 
         else:
             text = "Неизвестная команда воркспейса."
