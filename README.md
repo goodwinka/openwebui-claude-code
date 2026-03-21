@@ -148,6 +148,54 @@ curl -X DELETE -H "Authorization: Bearer $KEY" \
 | `MAX_WORKSPACES_PER_USER` | Макс. воркспейсов на юзера | `10` |
 | `PORT` | Порт сервера | `8000` |
 
+## Pipe Function (если бэкенд за прокси)
+
+Если браузер пользователя не имеет прямого доступа к бэкенду (бэкенд в
+закрытой сети, за NAT или firewall), используйте Pipe Function — она делает
+все запросы к бэкенду **изнутри Open WebUI** (server-side), а пользователь
+взаимодействует только с Open WebUI.
+
+### Установка
+
+1. **Admin panel → Functions → Add Function**
+2. Скопировать содержимое `openwebui/pipe_function.py`
+3. Сохранить, открыть настройки (⚙) и задать:
+
+| Valve | Значение |
+|---|---|
+| `BACKEND_URL` | Внутренний URL бэкенда, например `http://claude-code:8000` |
+| `API_KEY` | Значение `API_SECRET_KEY` из `.env` бэкенда |
+| `MAX_DOWNLOAD_MB` | Максимальный размер ZIP (по умолчанию 50 МБ) |
+| `BACKEND_TIMEOUT` | Таймаут запросов (по умолчанию 300 сек) |
+
+4. Отключить прямое подключение Open WebUI к бэкенду (или оставить оба)
+5. Выбрать модель **Claude Code** (через Pipe Function) в чате
+
+### Доступные команды через Pipe Function
+
+```
+download <workspace>        — скачать ZIP-архив воркспейса
+files <workspace> [path]    — показать список файлов
+```
+
+Остальные сообщения (обычный чат, `clone`, `workspace list` и т.д.) прозрачно
+проксируются к бэкенду.
+
+### Схема с Pipe Function
+
+```
+Браузер
+    │  HTTP (публичная сеть)
+    ▼
+Open WebUI (:8080)
+    │  Pipe Function (server-side, внутренняя сеть)
+    ▼
+Claude Code бэкенд (:8000)   ← недоступен из браузера напрямую
+    │
+    ▼
+Claude Agent SDK → /srv/workspaces/
+```
+
 ## Структура проекта
 
 ```
@@ -162,6 +210,8 @@ openwebui-claude-code/
 │   └── routes/
 │       ├── openai_compat.py  # /v1/chat/completions, /v1/models
 │       └── workspaces.py     # /api/workspaces/*
+├── openwebui/
+│   └── pipe_function.py      # Pipe Function для Open WebUI (прокси + скачивание)
 ├── scripts/
 │   └── setup.sh              # Установка (создаёт юзера, venv, systemd)
 ├── systemd/
