@@ -42,7 +42,10 @@ def test_chat_non_streaming(client, auth_headers, tmp_path):
             "/v1/chat/completions",
             headers=auth_headers,
             json={
-                "messages": [{"role": "user", "content": "Привет"}],
+                "messages": [
+                    {"role": "assistant", "content": "Предыдущий ответ"},
+                    {"role": "user", "content": "Привет"},
+                ],
                 "stream": False,
             },
         )
@@ -132,7 +135,10 @@ def test_chat_streaming(client, auth_headers, tmp_path):
             "/v1/chat/completions",
             headers=auth_headers,
             json={
-                "messages": [{"role": "user", "content": "Привет"}],
+                "messages": [
+                    {"role": "assistant", "content": "Предыдущий ответ"},
+                    {"role": "user", "content": "Привет"},
+                ],
                 "stream": True,
             },
         ) as resp:
@@ -149,12 +155,18 @@ def test_chat_streaming(client, auth_headers, tmp_path):
 # ─── User ID extraction ───────────────────────────────────────────────
 
 
+_HISTORY = [
+    {"role": "assistant", "content": "Предыдущий ответ"},
+    {"role": "user", "content": "hi"},
+]
+
+
 def test_user_id_from_header(client, auth_headers, tmp_path):
     """X-OpenWebUI-User-Name используется как user_id."""
     headers = {**auth_headers, "X-OpenWebUI-User-Name": "alice"}
     with (
         patch(
-            "app.claude_bridge.run_claude_sync",
+            "app.routes.openai_compat.run_claude_sync",
             side_effect=_mock_run_claude_sync("ok"),
         ),
         patch(
@@ -166,7 +178,7 @@ def test_user_id_from_header(client, auth_headers, tmp_path):
         client.post(
             "/v1/chat/completions",
             headers=headers,
-            json={"messages": [{"role": "user", "content": "hi"}], "stream": False},
+            json={"messages": _HISTORY, "stream": False},
         )
 
     mock_ws.assert_awaited_once_with("alice")
@@ -176,7 +188,7 @@ def test_user_id_from_body(client, auth_headers, tmp_path):
     """body.user используется как fallback user_id."""
     with (
         patch(
-            "app.claude_bridge.run_claude_sync",
+            "app.routes.openai_compat.run_claude_sync",
             side_effect=_mock_run_claude_sync("ok"),
         ),
         patch(
@@ -188,11 +200,7 @@ def test_user_id_from_body(client, auth_headers, tmp_path):
         client.post(
             "/v1/chat/completions",
             headers=auth_headers,
-            json={
-                "messages": [{"role": "user", "content": "hi"}],
-                "stream": False,
-                "user": "bob",
-            },
+            json={"messages": _HISTORY, "stream": False, "user": "bob"},
         )
 
     mock_ws.assert_awaited_once_with("bob")
@@ -202,7 +210,7 @@ def test_user_id_default(client, auth_headers, tmp_path):
     """Без user_id используется 'default'."""
     with (
         patch(
-            "app.claude_bridge.run_claude_sync",
+            "app.routes.openai_compat.run_claude_sync",
             side_effect=_mock_run_claude_sync("ok"),
         ),
         patch(
@@ -214,7 +222,7 @@ def test_user_id_default(client, auth_headers, tmp_path):
         client.post(
             "/v1/chat/completions",
             headers=auth_headers,
-            json={"messages": [{"role": "user", "content": "hi"}], "stream": False},
+            json={"messages": _HISTORY, "stream": False},
         )
 
     mock_ws.assert_awaited_once_with("default")
