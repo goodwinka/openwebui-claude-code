@@ -242,29 +242,35 @@ def _extract_text_from_message(message) -> str:
     if hasattr(message, "content") and isinstance(message.content, list):
         parts = []
         for block in message.content:
-            # TextBlock
-            if hasattr(block, "text") and not hasattr(block, "name"):
-                parts.append(block.text)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-
-            # ToolUseBlock — показываем что делает Claude
-            elif hasattr(block, "name") and hasattr(block, "input") and hasattr(block, "id"):
-                parts.append(_format_tool_use(block.name, block.input))
-            elif isinstance(block, dict) and block.get("type") == "tool_use":
-                parts.append(_format_tool_use(
-                    block.get("name", ""),
-                    block.get("input", {}),
-                ))
-
-            # ToolResultBlock — вывод инструмента
-            elif hasattr(block, "tool_use_id") and hasattr(block, "content"):
-                if block.content:
-                    parts.append(_format_tool_result(block.content))
-            elif isinstance(block, dict) and block.get("type") == "tool_result":
-                result_content = block.get("content", "")
-                if result_content:
-                    parts.append(_format_tool_result(result_content))
+            if isinstance(block, dict):
+                btype = block.get("type")
+                if btype == "text":
+                    parts.append(block.get("text", ""))
+                elif btype == "tool_use":
+                    parts.append(_format_tool_use(
+                        block.get("name", ""), block.get("input", {}),
+                    ))
+                elif btype == "tool_result":
+                    rc = block.get("content", "")
+                    if rc:
+                        parts.append(_format_tool_result(rc))
+            else:
+                # SDK-объекты: проверяем атрибут type первым
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    parts.append(getattr(block, "text", ""))
+                elif btype == "tool_use":
+                    parts.append(_format_tool_use(
+                        getattr(block, "name", ""), getattr(block, "input", {}),
+                    ))
+                elif btype == "tool_result":
+                    rc = getattr(block, "content", "")
+                    if rc:
+                        parts.append(_format_tool_result(rc))
+                elif btype is None:
+                    # Fallback для SDK-объектов без явного атрибута type
+                    if hasattr(block, "text"):
+                        parts.append(block.text)
 
         combined = "".join(parts)
         # Не делаем ранний return при пустом списке — проваливаемся к result-проверке
