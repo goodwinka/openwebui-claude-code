@@ -215,15 +215,19 @@ async def _stream_via_sdk(
     text_yielded = False
 
     async for message in query(prompt=prompt, options=options):
-        msg_type = getattr(message, "type", None)
+        # ResultMessage: есть result-строка, нет непустого content.
+        # Такая комбинация надёжнее, чем проверка атрибута type.
+        has_result = hasattr(message, "result") and isinstance(message.result, str)
+        has_content = hasattr(message, "content") and bool(message.content)
+        is_result_msg = has_result and not has_content
 
         # ResultMessage показываем только если AssistantMessage не дал текста
-        if msg_type == "result" and text_yielded:
+        if is_result_msg and text_yielded:
             continue
 
         text = _extract_text_from_message(message)
         if text:
-            if msg_type != "result":
+            if not is_result_msg:
                 text_yielded = True
             yield text
 
@@ -262,9 +266,12 @@ def _extract_text_from_message(message) -> str:
                 if result_content:
                     parts.append(_format_tool_result(result_content))
 
-        return "".join(parts)
+        combined = "".join(parts)
+        # Не делаем ранний return при пустом списке — проваливаемся к result-проверке
+        if combined:
+            return combined
 
-    # ResultMessage — только если нет content-блоков
+    # ResultMessage (или сообщение с пустым content, но непустым result)
     if hasattr(message, "result") and isinstance(message.result, str):
         return message.result
 
