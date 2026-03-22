@@ -20,6 +20,9 @@ from app.models import ChatCompletionResponse, ChatCompletionChoice, ChatMessage
 
 logger = logging.getLogger(__name__)
 
+# Максимальная длина вывода инструмента в чате (символов)
+_MAX_TOOL_OUTPUT = 3000
+
 
 def _build_prompt(messages: list[ChatMessage]) -> tuple[str, str | None]:
     """Собирает промпт из списка сообщений.
@@ -134,6 +137,55 @@ async def run_claude_sync(
     )
 
 
+# ─── Tool display helpers ─────────────────────────────────────────────
+
+
+def _format_tool_use(tool_name: str, tool_input: dict) -> str:
+    """Форматирует вызов инструмента для отображения в чате."""
+    lo = tool_name.lower()
+    if lo == "bash":
+        cmd = tool_input.get("command", "")
+        return f"\n```bash\n$ {cmd}\n```\n"
+    elif lo == "read":
+        path = tool_input.get("file_path", tool_input.get("path", ""))
+        return f"\n*Читаю: `{path}`*\n"
+    elif lo == "write":
+        path = tool_input.get("file_path", "")
+        return f"\n*Создаю: `{path}`*\n"
+    elif lo == "edit":
+        path = tool_input.get("file_path", "")
+        return f"\n*Редактирую: `{path}`*\n"
+    elif lo == "glob":
+        pattern = tool_input.get("pattern", "")
+        return f"\n*Glob: `{pattern}`*\n"
+    elif lo == "grep":
+        pattern = tool_input.get("pattern", "")
+        return f"\n*Grep: `{pattern}`*\n"
+    return f"\n*{tool_name}*\n"
+
+
+def _format_tool_result(content: str | list) -> str:
+    """Форматирует результат выполнения инструмента для отображения."""
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+            elif isinstance(item, str):
+                parts.append(item)
+        content = "".join(parts)
+
+    if not content or not content.strip():
+        return ""
+
+    truncated = ""
+    if len(content) > _MAX_TOOL_OUTPUT:
+        content = content[:_MAX_TOOL_OUTPUT]
+        truncated = "\n*... (вывод обрезан)*"
+
+    return f"\n```\n{content.rstrip()}\n```{truncated}\n"
+
+
 # ─── SDK-based streaming ─────────────────────────────────────────────
 
 
@@ -158,29 +210,61 @@ async def _stream_via_sdk(
 
     options = ClaudeAgentOptions(**options_kwargs)
 
+    # Отслеживаем, был ли показан текст из AssistantMessage.
+    # Если да — ResultMessage не показываем (он дублирует финальный ответ).
+    text_yielded = False
+
     async for message in query(prompt=prompt, options=options):
+        msg_type = getattr(message, "type", None)
+
+        # ResultMessage показываем только если AssistantMessage не дал текста
+        if msg_type == "result" and text_yielded:
+            continue
+
         text = _extract_text_from_message(message)
         if text:
+            if msg_type != "result":
+                text_yielded = True
             yield text
 
 
 def _extract_text_from_message(message) -> str:
-    """Извлекает текст из сообщения Agent SDK."""
-    # AssistantMessage — текст от Claude
+    """Извлекает текст из сообщения Agent SDK, включая вызовы инструментов и их вывод."""
+    # content как строка (простой AssistantMessage)
     if hasattr(message, "content") and isinstance(message.content, str):
         return message.content
 
-    # content — список блоков (TextBlock и др.)
+    # content как список блоков (TextBlock, ToolUseBlock, ToolResultBlock)
     if hasattr(message, "content") and isinstance(message.content, list):
         parts = []
         for block in message.content:
-            if hasattr(block, "text"):
+            # TextBlock
+            if hasattr(block, "text") and not hasattr(block, "name"):
                 parts.append(block.text)
             elif isinstance(block, dict) and block.get("type") == "text":
                 parts.append(block.get("text", ""))
+
+            # ToolUseBlock — показываем что делает Claude
+            elif hasattr(block, "name") and hasattr(block, "input") and hasattr(block, "id"):
+                parts.append(_format_tool_use(block.name, block.input))
+            elif isinstance(block, dict) and block.get("type") == "tool_use":
+                parts.append(_format_tool_use(
+                    block.get("name", ""),
+                    block.get("input", {}),
+                ))
+
+            # ToolResultBlock — вывод инструмента
+            elif hasattr(block, "tool_use_id") and hasattr(block, "content"):
+                if block.content:
+                    parts.append(_format_tool_result(block.content))
+            elif isinstance(block, dict) and block.get("type") == "tool_result":
+                result_content = block.get("content", "")
+                if result_content:
+                    parts.append(_format_tool_result(result_content))
+
         return "".join(parts)
 
-    # ResultMessage
+    # ResultMessage — только если нет content-блоков
     if hasattr(message, "result") and isinstance(message.result, str):
         return message.result
 
@@ -220,6 +304,7 @@ async def _stream_via_cli(
 
     assert proc.stdout is not None
     buffer = ""
+    text_yielded = False  # отслеживаем, был ли показан текст из assistant-событий
 
     async for raw_line in proc.stdout:
         line = raw_line.decode("utf-8", errors="replace")
@@ -239,17 +324,44 @@ async def _stream_via_cli(
 
             text = ""
             if isinstance(event, dict):
-                if "content" in event and isinstance(event["content"], str):
-                    text = event["content"]
-                elif "result" in event:
-                    text = str(event["result"])
-                elif event.get("type") == "assistant":
+                event_type = event.get("type")
+
+                if event_type == "assistant":
+                    # Сообщение ассистента: текст + вызовы инструментов
                     content = event.get("message", {}).get("content", [])
                     for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text += block.get("text", "")
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                text += block.get("text", "")
+                            elif block.get("type") == "tool_use":
+                                text += _format_tool_use(
+                                    block.get("name", ""),
+                                    block.get("input", {}),
+                                )
+
+                elif event_type == "user":
+                    # Результаты инструментов (tool_result)
+                    content = event.get("message", {}).get("content", [])
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            result_content = block.get("content", "")
+                            if result_content:
+                                text += _format_tool_result(result_content)
+
+                elif event_type == "result":
+                    # Финальный результат — показываем только если assistant не дал текста
+                    if not text_yielded:
+                        result_text = event.get("result", "")
+                        if isinstance(result_text, str) and result_text:
+                            text = result_text
+
+                # Обратная совместимость со старыми/нестандартными форматами
+                elif "content" in event and isinstance(event["content"], str):
+                    text = event["content"]
 
             if text:
+                if event.get("type") not in ("result",):
+                    text_yielded = True
                 yield text
 
     await proc.wait()
