@@ -688,6 +688,9 @@ function download() {{
             "stream": True,
         }
 
+        content_yielded = False
+        done = False
+
         try:
             async with httpx.AsyncClient(timeout=self.valves.BACKEND_TIMEOUT) as client:
                 async with client.stream(
@@ -702,16 +705,26 @@ function download() {{
                             continue
                         data = line[6:]
                         if data == "[DONE]":
-                            break
+                            done = True
+                            continue
+                        if done:
+                            continue
                         try:
                             chunk = json.loads(data)
                             delta = chunk["choices"][0]["delta"].get("content", "")
                             if delta:
+                                content_yielded = True
                                 yield delta
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
         except httpx.HTTPStatusError as exc:
             yield f"\n\n**Ошибка бэкенда {exc.response.status_code}:** {exc.response.text}"
+        except httpx.RemoteProtocolError:
+            # TransferEncodingError during stream cleanup after [DONE] is expected
+            # when the server closes the connection before httpx finishes draining.
+            # Suppress it if content was already delivered successfully.
+            if not content_yielded:
+                yield "\n\n**Ошибка: соединение с бэкендом прервано.**"
         except Exception as exc:
             yield f"\n\n**Ошибка соединения с бэкендом:** {exc}"
