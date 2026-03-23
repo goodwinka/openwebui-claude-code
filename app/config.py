@@ -11,9 +11,6 @@ class Settings(BaseSettings):
     permission_mode: str = "acceptEdits"
     max_turns: int = 50
 
-    # Auth
-    api_secret_key: str = "change-me"
-
     # Workspaces
     workspaces_root: Path = Path("/srv/workspaces")
     max_workspaces_per_user: int = 10
