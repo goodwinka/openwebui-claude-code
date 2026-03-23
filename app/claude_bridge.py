@@ -305,7 +305,6 @@ async def _stream_via_cli(
     cmd += ["--model", settings.claude_model]
 
     env = os.environ.copy()
-    env["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
