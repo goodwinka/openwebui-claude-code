@@ -16,10 +16,9 @@ from __future__ import annotations
 import logging
 import re
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from app.auth import verify_api_key
 from app.claude_bridge import detect_workspace_command, run_claude_sync, stream_claude_response
 from app.models import (
     ChatCompletionRequest,
@@ -120,9 +119,7 @@ def _extract_user_id(request: Request, body: ChatCompletionRequest) -> str:
 
 
 @router.get("/models")
-async def list_models(
-    _: str = Depends(verify_api_key),
-) -> ModelListResponse:
+async def list_models() -> ModelListResponse:
     return ModelListResponse(
         data=[
             ModelInfo(id="claude-code", owned_by="anthropic"),
@@ -136,7 +133,6 @@ async def list_models(
 async def chat_completions(
     request: Request,
     body: ChatCompletionRequest,
-    _: str = Depends(verify_api_key),
 ):
     """Основной эндпоинт.
 

@@ -6,10 +6,9 @@ import io
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.auth import verify_api_key
 from app.models import (
     CloneRequest,
     DownloadZipRequest,
@@ -103,7 +102,6 @@ def _get_ws_path(user_id: str, workspace_name: str) -> Path:
 @router.get("")
 async def list_workspaces(
     user_id: str = Query(..., description="ID пользователя"),
-    _: str = Depends(verify_api_key),
 ) -> WorkspaceListResponse:
     """Список воркспейсов пользователя."""
     workspaces = await workspace_manager.list_workspaces(user_id)
@@ -118,7 +116,6 @@ async def list_workspaces(
 @router.post("/clone")
 async def clone_repo(
     request: CloneRequest,
-    _: str = Depends(verify_api_key),
 ) -> WorkspaceInfo:
     """Клонирует git-репозиторий в воркспейс."""
     try:
@@ -137,7 +134,6 @@ async def clone_repo(
 @router.put("/active")
 async def switch_workspace(
     request: SwitchWorkspaceRequest,
-    _: str = Depends(verify_api_key),
 ) -> dict:
     """Переключает активный воркспейс."""
     try:
@@ -153,7 +149,6 @@ async def switch_workspace(
 async def delete_workspace(
     user_id: str,
     workspace_name: str,
-    _: str = Depends(verify_api_key),
 ) -> dict:
     """Удаляет воркспейс."""
     try:
@@ -171,7 +166,6 @@ async def list_files(
     user_id: str,
     workspace_name: str,
     path: str = Query("", description="Относительный путь внутри воркспейса (пусто = корень)"),
-    _: str = Depends(verify_api_key),
 ) -> FileListResponse:
     """Возвращает список файлов воркспейса (рекурсивно).
 
@@ -195,7 +189,6 @@ async def download_file(
     user_id: str,
     workspace_name: str,
     path: str = Query(..., description="Относительный путь к файлу внутри воркспейса"),
-    _: str = Depends(verify_api_key),
 ) -> FileResponse:
     """Скачивает один файл из воркспейса."""
     ws_path = _get_ws_path(user_id, workspace_name)
@@ -223,7 +216,6 @@ async def download_files_zip(
     user_id: str,
     workspace_name: str,
     request: DownloadZipRequest,
-    _: str = Depends(verify_api_key),
 ) -> StreamingResponse:
     """Скачивает выбранные файлы/папки как ZIP-архив.
 
@@ -284,7 +276,6 @@ async def download_files_zip(
 async def download_workspace_zip(
     user_id: str,
     workspace_name: str,
-    _: str = Depends(verify_api_key),
 ) -> StreamingResponse:
     """Скачивает весь воркспейс как ZIP-архив (без .git)."""
     ws_path = _get_ws_path(user_id, workspace_name)
