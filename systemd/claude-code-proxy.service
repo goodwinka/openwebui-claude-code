@@ -8,7 +8,7 @@ User=claude-code
 Group=claude-code
 WorkingDirectory=/opt/openwebui-claude-code
 EnvironmentFile=/opt/openwebui-claude-code/.env
-ExecStart=/opt/openwebui-claude-code/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info
+ExecStart=/opt/openwebui-claude-code/.venv/bin/uvicorn app.main:app --app-dir /opt/openwebui-claude-code --host 0.0.0.0 --port 8000 --log-level info
 Restart=always
 RestartSec=5
 
