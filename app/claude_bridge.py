@@ -24,6 +24,32 @@ logger = logging.getLogger(__name__)
 # Максимальная длина вывода инструмента в чате (символов)
 _MAX_TOOL_OUTPUT = 3000
 
+# Patterns that indicate the Claude CLI is not authenticated
+_AUTH_ERROR_PATTERNS = (
+    "not logged in",
+    "please run /login",
+    "authentication required",
+    "not authenticated",
+)
+
+_AUTH_ERROR_HELP = (
+    "**Authentication Required**: The Claude CLI is not logged in.\n\n"
+    "To fix this, authenticate the service user by running:\n\n"
+    "```bash\n"
+    "sudo -u claude-code claude login\n"
+    "```\n\n"
+    "If running locally (not as a service), just run:\n\n"
+    "```bash\n"
+    "claude login\n"
+    "```"
+)
+
+
+def _is_auth_error(text: str) -> bool:
+    """Returns True if the text indicates a Claude CLI authentication error."""
+    lower = text.lower()
+    return any(pattern in lower for pattern in _AUTH_ERROR_PATTERNS)
+
 
 def _build_prompt(messages: list[ChatMessage]) -> tuple[str, str | None]:
     """Собирает промпт из списка сообщений.
@@ -93,17 +119,35 @@ async def stream_claude_response(
     request_id = f"chatcmpl-{int(time.time() * 1000)}"
     created = int(time.time())
 
+    auth_error_reported = False
+
     try:
         async for chunk_text in _stream_via_sdk(prompt, system_prompt, workspace_dir):
+            if _is_auth_error(chunk_text):
+                auth_error_reported = True
+                yield _format_sse_chunk(request_id, created, _AUTH_ERROR_HELP)
+                break
             yield _format_sse_chunk(request_id, created, chunk_text)
     except ImportError:
         logger.info("claude_agent_sdk not available, falling back to CLI")
         async for chunk_text in _stream_via_cli(prompt, system_prompt, workspace_dir):
+            if _is_auth_error(chunk_text):
+                auth_error_reported = True
+                yield _format_sse_chunk(request_id, created, _AUTH_ERROR_HELP)
+                break
             yield _format_sse_chunk(request_id, created, chunk_text)
     except Exception as exc:
-        logger.error("claude_agent_sdk error: %s", exc)
-        error_text = f"**Error**: Claude Agent SDK failed: {exc}"
-        yield _format_sse_chunk(request_id, created, error_text)
+        if not auth_error_reported:
+            logger.error("claude_agent_sdk error: %s", exc)
+            exc_str = str(exc)
+            if _is_auth_error(exc_str) or "exit code 1" in exc_str:
+                yield _format_sse_chunk(request_id, created, _AUTH_ERROR_HELP)
+            else:
+                error_text = f"**Error**: Claude Agent SDK failed: {exc}"
+                yield _format_sse_chunk(request_id, created, error_text)
+        else:
+            # Auth error was already reported; just log the follow-up exception
+            logger.debug("Suppressed follow-up exception after auth error: %s", exc)
 
     # Финальный чанк stop
     stop_chunk = {
@@ -125,15 +169,32 @@ async def run_claude_sync(
     prompt, system_prompt = _build_prompt(messages)
     full_text = ""
 
+    auth_error_reported = False
+
     try:
         async for chunk in _stream_via_sdk(prompt, system_prompt, workspace_dir):
+            if _is_auth_error(chunk):
+                auth_error_reported = True
+                full_text = _AUTH_ERROR_HELP
+                break
             full_text += chunk
     except ImportError:
         async for chunk in _stream_via_cli(prompt, system_prompt, workspace_dir):
+            if _is_auth_error(chunk):
+                auth_error_reported = True
+                full_text = _AUTH_ERROR_HELP
+                break
             full_text += chunk
     except Exception as exc:
-        logger.error("claude_agent_sdk error: %s", exc)
-        full_text = f"**Error**: Claude Agent SDK failed: {exc}"
+        if not auth_error_reported:
+            logger.error("claude_agent_sdk error: %s", exc)
+            exc_str = str(exc)
+            if _is_auth_error(exc_str) or "exit code 1" in exc_str:
+                full_text = _AUTH_ERROR_HELP
+            else:
+                full_text = f"**Error**: Claude Agent SDK failed: {exc}"
+        else:
+            logger.debug("Suppressed follow-up exception after auth error: %s", exc)
 
     return ChatCompletionResponse(
         model="claude-code",
