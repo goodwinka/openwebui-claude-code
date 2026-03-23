@@ -33,14 +33,15 @@ _AUTH_ERROR_PATTERNS = (
 )
 
 _AUTH_ERROR_HELP = (
-    "**Authentication Required**: The Claude CLI is not logged in.\n\n"
-    "To fix this, authenticate the service user by running:\n\n"
+    "**Authentication Error**: The Claude CLI is not authenticated.\n\n"
+    "**For a local LLM (recommended):** set `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` in your `.env`:\n\n"
+    "```\n"
+    "ANTHROPIC_API_KEY=local\n"
+    "ANTHROPIC_BASE_URL=http://localhost:11434\n"
+    "```\n\n"
+    "**For the Anthropic cloud API:** authenticate the service user:\n\n"
     "```bash\n"
     "sudo -u claude-code claude login\n"
-    "```\n\n"
-    "If running locally (not as a service), just run:\n\n"
-    "```bash\n"
-    "claude login\n"
     "```"
 )
 

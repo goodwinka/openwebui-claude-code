@@ -1,5 +1,13 @@
 from pathlib import Path
+
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Load .env into os.environ early so that ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL
+# (intentionally not declared as Settings fields) are available to CLI subprocesses.
+# When running under systemd, EnvironmentFile= already does this; load_dotenv() is
+# a no-op if the variables are already set (override=False by default).
+load_dotenv(override=False)
 
 
 class Settings(BaseSettings):
