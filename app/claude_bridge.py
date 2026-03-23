@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -99,6 +100,10 @@ async def stream_claude_response(
         logger.info("claude_agent_sdk not available, falling back to CLI")
         async for chunk_text in _stream_via_cli(prompt, system_prompt, workspace_dir):
             yield _format_sse_chunk(request_id, created, chunk_text)
+    except Exception as exc:
+        logger.error("claude_agent_sdk error: %s", exc)
+        error_text = f"**Error**: Claude Agent SDK failed: {exc}"
+        yield _format_sse_chunk(request_id, created, error_text)
 
     # Финальный чанк stop
     stop_chunk = {
@@ -126,6 +131,9 @@ async def run_claude_sync(
     except ImportError:
         async for chunk in _stream_via_cli(prompt, system_prompt, workspace_dir):
             full_text += chunk
+    except Exception as exc:
+        logger.error("claude_agent_sdk error: %s", exc)
+        full_text = f"**Error**: Claude Agent SDK failed: {exc}"
 
     return ChatCompletionResponse(
         model="claude-code",
@@ -197,6 +205,10 @@ async def _stream_via_sdk(
     """Стриминг через Python Agent SDK (claude_agent_sdk)."""
     from claude_agent_sdk import query, ClaudeAgentOptions
 
+    # Prefer the system claude CLI over the SDK's bundled binary,
+    # since the system CLI carries the user's auth session/credentials.
+    system_cli = settings.claude_cli_path or shutil.which("claude")
+
     options_kwargs: dict = {
         "allowed_tools": settings.allowed_tools_list,
         "permission_mode": settings.permission_mode,
@@ -204,6 +216,9 @@ async def _stream_via_sdk(
         "model": settings.claude_model,
         "max_turns": settings.max_turns,
     }
+    if system_cli:
+        options_kwargs["cli_path"] = system_cli
+        logger.debug("Using system claude CLI: %s", system_cli)
 
     if system_prompt:
         options_kwargs["system_prompt"] = system_prompt

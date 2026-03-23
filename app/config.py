@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     allowed_tools: str = "Read,Edit,Write,Bash,Glob,Grep"
     permission_mode: str = "acceptEdits"
     max_turns: int = 50
+    claude_cli_path: str = ""  # Override path to claude CLI binary (empty = auto-detect)
 
     # Workspaces
     workspaces_root: Path = Path("/srv/workspaces")
