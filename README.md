@@ -40,7 +40,7 @@ Per-user workspaces (/srv/workspaces/)
 - Linux (Ubuntu 22.04+ / Debian 12+)
 - Python 3.10+
 - Node.js 18+
-- Anthropic API ключ
+- Anthropic API ключ **или** локально запущенная модель (см. раздел ниже)
 - Open WebUI (установленный отдельно)
 
 ### Установка
@@ -64,6 +64,40 @@ sudo systemctl enable claude-code-proxy
 curl http://localhost:8000/health
 curl -H "Authorization: Bearer YOUR_KEY" http://localhost:8000/v1/models
 ```
+
+### Использование локальной модели
+
+Claude Code поддерживает любой сервер, совместимый с Anthropic API, через переменную `ANTHROPIC_BASE_URL`.
+
+**Пример с LiteLLM** (рекомендуется — поддерживает Ollama, vLLM, LM Studio и другие):
+
+```bash
+# 1. Установите LiteLLM
+pip install litellm[proxy]
+
+# 2. Запустите прокси с нужной моделью
+litellm --model ollama/llama3 --port 4000
+
+# 3. В .env укажите:
+ANTHROPIC_BASE_URL=http://localhost:4000
+ANTHROPIC_API_KEY=local            # любое значение
+CLAUDE_MODEL=ollama/llama3         # имя модели на прокси-сервере
+```
+
+**Пример с Ollama напрямую** (требует Anthropic-совместимый адаптер):
+
+```bash
+# Запустите Ollama
+ollama serve
+
+# В .env:
+ANTHROPIC_BASE_URL=http://localhost:11434
+ANTHROPIC_API_KEY=local
+CLAUDE_MODEL=llama3
+```
+
+> **Важно:** локальная модель должна экспортировать Anthropic-совместимый API (`/v1/messages`).
+> Если ваш сервер совместим только с OpenAI API, используйте LiteLLM в качестве прокси-конвертера.
 
 ### Настройка Open WebUI
 
