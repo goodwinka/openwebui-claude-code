@@ -17,19 +17,22 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 [[ $EUID -eq 0 ]] || error "Этот скрипт нужно запускать от root (sudo)"
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-info "Директория проекта: $PROJECT_DIR"
+SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+info "Исходная директория: $SOURCE_DIR"
 
 # ─── Конфигурация ────────────────────────────────────────────────
 
+INSTALL_DIR="/opt/openwebui-claude-code"
 SERVICE_USER="claude-code"
 WORKSPACES_ROOT="/srv/workspaces"
 
 # Подтягиваем из .env если есть
-if [[ -f "$PROJECT_DIR/.env" ]]; then
-    SERVICE_USER=$(grep -E '^SERVICE_USER=' "$PROJECT_DIR/.env" | cut -d= -f2 || echo "$SERVICE_USER")
-    WORKSPACES_ROOT=$(grep -E '^WORKSPACES_ROOT=' "$PROJECT_DIR/.env" | cut -d= -f2 || echo "$WORKSPACES_ROOT")
+if [[ -f "$SOURCE_DIR/.env" ]]; then
+    SERVICE_USER=$(grep -E '^SERVICE_USER=' "$SOURCE_DIR/.env" | cut -d= -f2 || echo "$SERVICE_USER")
+    WORKSPACES_ROOT=$(grep -E '^WORKSPACES_ROOT=' "$SOURCE_DIR/.env" | cut -d= -f2 || echo "$WORKSPACES_ROOT")
 fi
+
+PROJECT_DIR="$INSTALL_DIR"
 
 # ─── Системные зависимости ───────────────────────────────────────
 
@@ -84,6 +87,13 @@ if ! id "$SERVICE_USER" &>/dev/null; then
 fi
 info "Системный пользователь: $SERVICE_USER (uid=$(id -u "$SERVICE_USER")) ✓"
 
+# ─── Разворачиваем проект в $INSTALL_DIR ─────────────────────────
+
+info "Устанавливаю проект в $INSTALL_DIR ..."
+mkdir -p "$INSTALL_DIR"
+rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
+    "$SOURCE_DIR/" "$INSTALL_DIR/"
+
 # ─── Python venv ─────────────────────────────────────────────────
 
 VENV_DIR="$PROJECT_DIR/.venv"
@@ -118,11 +128,16 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$PROJECT_DIR"
 # ─── .env ─────────────────────────────────────────────────────────
 
 if [[ ! -f "$PROJECT_DIR/.env" ]]; then
-    info "Копирую .env.example → .env"
-    cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+    if [[ -f "$SOURCE_DIR/.env" ]]; then
+        info "Копирую $SOURCE_DIR/.env → $PROJECT_DIR/.env"
+        cp "$SOURCE_DIR/.env" "$PROJECT_DIR/.env"
+    else
+        info "Копирую .env.example → .env"
+        cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+        warn "Отредактируйте .env — укажите ANTHROPIC_API_KEY и API_SECRET_KEY!"
+    fi
     chown "$SERVICE_USER:$SERVICE_USER" "$PROJECT_DIR/.env"
     chmod 600 "$PROJECT_DIR/.env"
-    warn "Отредактируйте .env — укажите ANTHROPIC_API_KEY и API_SECRET_KEY!"
 fi
 
 # ─── Systemd ─────────────────────────────────────────────────────
@@ -146,7 +161,13 @@ Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=claude-code-proxy
 LimitNOFILE=65536
+TimeoutStartSec=30
+TimeoutStopSec=30
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=$WORKSPACES_ROOT /tmp
 
 [Install]
 WantedBy=multi-user.target
