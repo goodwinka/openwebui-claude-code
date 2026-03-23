@@ -370,7 +370,7 @@ async def _stream_via_cli(
     workspace_dir: Path,
 ) -> AsyncIterator[str]:
     """Стриминг через CLI (`claude -p`). Fallback если SDK не установлен."""
-    cmd = ["claude", "-p", prompt, "--output-format", "stream-json"]
+    cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
 
     if system_prompt:
         cmd += ["--system-prompt", system_prompt]
