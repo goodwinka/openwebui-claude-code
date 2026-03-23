@@ -208,11 +208,6 @@ async def _stream_via_sdk(
     if system_prompt:
         options_kwargs["system_prompt"] = system_prompt
 
-    # Для локальной модели передаём переменные окружения в процесс SDK
-    if settings.anthropic_base_url:
-        os.environ["ANTHROPIC_BASE_URL"] = settings.anthropic_base_url
-    os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
-
     options = ClaudeAgentOptions(**options_kwargs)
 
     # Отслеживаем, был ли показан текст из AssistantMessage.
@@ -310,9 +305,6 @@ async def _stream_via_cli(
     cmd += ["--model", settings.claude_model]
 
     env = os.environ.copy()
-    env["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
-    if settings.anthropic_base_url:
-        env["ANTHROPIC_BASE_URL"] = settings.anthropic_base_url
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,

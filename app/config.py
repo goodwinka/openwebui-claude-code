@@ -3,12 +3,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # Anthropic / Local model
-    # Для локальной модели: установите ANTHROPIC_BASE_URL и любой ключ (например "local")
-    anthropic_api_key: str = "local"
-    # URL локального сервера, совместимого с Anthropic API (например Ollama-прокси).
-    # Если пусто — используется официальный API Anthropic.
-    anthropic_base_url: str = ""
+    # ANTHROPIC_API_KEY и ANTHROPIC_BASE_URL намеренно не объявлены здесь:
+    # systemd загружает их из .env напрямую в окружение процесса (EnvironmentFile=),
+    # и Claude Code CLI/SDK подхватывают их из os.environ автоматически.
     claude_model: str = "sonnet"
     allowed_tools: str = "Read,Edit,Write,Bash,Glob,Grep"
     permission_mode: str = "acceptEdits"
